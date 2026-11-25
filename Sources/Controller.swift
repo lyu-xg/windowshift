@@ -82,6 +82,11 @@ final class Controller {
         set { config.edgeSnapping = newValue; if !newValue { preview.hide() } }
     }
 
+    var gapSize: CGFloat {
+        get { config.gapSize }
+        set { config.gapSize = newValue }
+    }
+
     func hidePreviewIfDisabled() {
         if !edgeSnapping { preview.hide() }
     }
@@ -90,7 +95,7 @@ final class Controller {
         var pid: pid_t = 0
         guard AXUIElementGetPid(window, &pid) == .success,
               let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return true }
-        return !config.ignoredGestureApps.contains(bundleID)
+        return !config.ignoresGestures(for: bundleID)
     }
 
     private let preview = SnapPreview()
@@ -264,13 +269,14 @@ final class Controller {
 
     private func showSnap(at point: CGPoint, for original: CGRect) {
         guard let (layout, screen) = snapTarget(point) else { preview.hide(); return }
-        preview.show(layout.frame(in: screen.quartzVisibleFrame, window: original))
+        preview.show(layout.frame(in: screen.quartzVisibleFrame, window: original, gap: gapSize))
     }
 
     private func commitSnap(at point: CGPoint, window: AXUIElement, original: CGRect) {
         guard let (layout, screen) = snapTarget(point), Windows.prepare(window, resizing: true) else { return }
-        place(layout, window: window, target: layout.frame(in: screen.quartzVisibleFrame, window: original),
-              previous: original, cycle: 0)
+        let visible = screen.quartzVisibleFrame
+        place(layout, window: window, target: layout.frame(in: visible, window: original, gap: gapSize),
+              bounds: visible, previous: original, cycle: 0)
     }
 
     func perform(_ layout: Layout, on window: AXUIElement? = nil) {
@@ -281,7 +287,7 @@ final class Controller {
         let history = placements.first { CFEqual($0.window, target) }
         if layout == .restore {
             guard let history else { return }
-            Windows.apply(history.original, to: target)
+            Windows.apply(history.original, to: target, within: screen.quartzVisibleFrame)
             placements.removeAll { CFEqual($0.window, target) }
             return
         }
@@ -298,24 +304,25 @@ final class Controller {
             let next = CGRect(x: destination.minX + fractionX * (destination.width - width),
                               y: destination.minY + fractionY * (destination.height - height),
                               width: width, height: height)
-            place(layout, window: target, target: next, previous: current, cycle: 0)
+            place(layout, window: target, target: next, bounds: destination, previous: current, cycle: 0)
             return
         }
         var cycle = 0
         if layout.cycles, let history, history.layout == layout, close(current, history.applied) {
             cycle = (history.cycle + 1) % 3
         }
-        let frame = layout.frame(in: screen.quartzVisibleFrame, window: current, cycle: cycle)
-        place(layout, window: target, target: frame, previous: current, cycle: cycle)
+        let visible = screen.quartzVisibleFrame
+        let frame = layout.frame(in: visible, window: current, cycle: cycle, gap: gapSize)
+        place(layout, window: target, target: frame, bounds: visible, previous: current, cycle: cycle)
     }
 
-    private func place(_ layout: Layout, window: AXUIElement, target: CGRect, previous: CGRect, cycle: Int) {
+    private func place(_ layout: Layout, window: AXUIElement, target: CGRect, bounds: CGRect, previous: CGRect, cycle: Int) {
         let history = placements.first { CFEqual($0.window, window) }
         let original = history.map { close(previous, $0.applied) ? $0.original : previous } ?? previous
         if layout == .center {
             Windows.withEnhancedUISuspended(for: window) { Windows.move(window, to: target.origin) }
         } else {
-            Windows.apply(target, to: window)
+            Windows.apply(target, to: window, within: bounds)
         }
         guard let applied = Windows.frame(window) else { return }
         placements.removeAll { CFEqual($0.window, window) }

@@ -1,17 +1,29 @@
 # WindowShift
 
-WindowShift combines modifier-held mouse movement with keyboard layouts and screen-edge snapping in one macOS menu-bar app. It runs on macOS 13 or later and builds using the Xcode Command Line Tools.
+WindowShift combines modifier-held mouse movement and resizing with keyboard layouts and screen-edge snapping in one lightweight macOS menu-bar app. It runs on macOS 13 (Ventura) or later, has zero external dependencies, and builds with the Xcode Command Line Tools.
 
-## Build and run
+## Build and test
 
 ```sh
+# Native build
 ./build.sh
 open build/WindowShift.app
+
+# Universal build (Apple Silicon + Intel)
+./build.sh --universal
+
+# Optional Developer ID signing (preserves Accessibility permission across updates)
+SIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)" ./build.sh --universal
+
+# Run unit tests
+swift test
 ```
 
-If you want to keep the app, move it to Applications before granting permission. From the menu-bar icon, choose **Enable Accessibility…** and enable WindowShift in System Settings. Pause other window managers while testing overlapping gestures or hotkeys. If a drag shows two snap previews, disable the overlapping snap feature in macOS or in the other window manager.
+If you want to keep the app, copy `build/WindowShift.app` into `/Applications` before approving it under **System Settings → Privacy & Security → Accessibility**. When Accessibility or Input Monitoring is missing, the menu-bar icon dims and displays a badge.
 
-To use existing Swift Shift and Rectangle preferences, quit both apps and WindowShift, then run `open build/WindowShift.app --args --import-settings`. This saves the supported gesture and layout bindings, exclusions, focus, and snapping settings as WindowShift preferences. If Launch at Login was enabled, WindowShift requests its own login item. Rectangle's Todo feature is outside the window layout controls.
+A Homebrew Cask definition is also included in `Casks/windowshift.rb`, and pushing a `v*` tag builds and publishes a universal GitHub Release via `.github/workflows/release.yml` (with optional Developer ID signing and notarization when `APPLE_SIGNING_*` / `APPLE_NOTARY_*` secrets are configured).
+
+## Defaults
 
 | Action | Default |
 | --- | --- |
@@ -23,25 +35,30 @@ To use existing Swift Shift and Rectangle preferences, quit both apps and Window
 | Maximize, center, or restore | **Control–Option** + Return, C, or Delete |
 | Move to previous or next display | **Control–Option** + [ or ] |
 
-Repeat an arrow shortcut to cycle from half to one-third to two-thirds. For edge snapping, move a window toward a screen edge or corner and release when the preview appears. This works with the move chord or a title bar drag. Bottom-edge zones snap to thirds.
-
-The menu lets you choose move and resize modifiers, toggle quadrant resizing and snapping to nearby windows, focus the window during gestures, pause the utility, and launch at login. WindowShift operates on standard windows that expose writable Accessibility geometry. Full-screen windows are skipped, and an app can enforce its own size limits.
-
-Inspired by [Swift Shift](https://github.com/pablopunk/SwiftShift) and [Rectangle](https://github.com/rxhanson/Rectangle). This is an independent Swift implementation based on public macOS APIs.
+Repeat an edge shortcut to cycle from half to one-third to two-thirds. For edge snapping, move a window toward a screen edge or corner and release when the preview appears (works with the move chord or a title-bar drag; bottom-edge zones snap to thirds). Shortcut keys adapt to the active ASCII-capable keyboard layout (QWERTY, AZERTY, QWERTZ, Dvorak, Colemak).
 
 ## Configuration
 
-WindowShift watches `~/.config/windowshift/config.json` (or `$XDG_CONFIG_HOME/windowshift/config.json`) and hot-reloads changes on save, including keyboard shortcuts and symlinked dotfiles. Choose **Open Config…** from the menu bar to generate or open it. When `config.json` is absent, WindowShift falls back to `UserDefaults`.
+Use **Settings…** (`⌘,`) from the menu bar to adjust chords, window gap, toggles, and record keyboard shortcuts, or edit `~/.config/windowshift/config.json` (or `$XDG_CONFIG_HOME/windowshift/config.json`) directly. WindowShift watches the resolved file and parent directory so symlinked dotfiles and atomic editor saves hot-reload settings and re-register hotkeys automatically. When `config.json` is absent, WindowShift falls back to `UserDefaults`.
 
 ```json
 {
   "moveChord": "opt+cmd",
   "resizeChord": "shift+cmd",
+  "gapSize": 0,
   "edgeSnapping": true,
   "smartResize": false,
   "focusWindow": false,
   "snapToNearbyWindows": true,
-  "ignoredGestureApps": [],
+  "ignoredApps": [
+    "com.parallels.desktop.console"
+  ],
+  "ignoredGestureApps": [
+    "com.pointum.hazeover"
+  ],
+  "ignoredShortcutApps": [
+    "com.microsoft.rdc.macos"
+  ],
   "shortcuts": {
     "leftHalf": "opt+cmd+h",
     "rightHalf": "opt+cmd+l",
@@ -51,6 +68,17 @@ WindowShift watches `~/.config/windowshift/config.json` (or `$XDG_CONFIG_HOME/wi
 }
 ```
 
-## Installing locally
+- `gapSize`: outer screen margin and spacing between adjacent panes (`0–100` px).
+- `ignoredApps`: bundle IDs excluded from both mouse gestures and global shortcuts (hotkeys are temporarily unregistered while an excluded app is frontmost).
+- `ignoredGestureApps` / `ignoredShortcutApps`: fine-grained exclusions for gestures or shortcuts only.
+- `shortcuts`: set any layout to `null` (or omit it) to leave it unbound.
 
-Copy the built bundle into `/Applications` before approving it under **System Settings → Privacy & Security → Accessibility**. Ad-hoc signatures change when the app is rebuilt. If an update stops responding, remove the old Accessibility entry and add the installed copy again. To start it automatically, add the installed bundle under **General → Login Items & Extensions → Open at Login**.
+### Migrating from Rectangle and Swift Shift
+
+Quit Rectangle, Swift Shift, and WindowShift, then run `open /Applications/WindowShift.app --args --import-settings`. WindowShift imports supported gestures, layout bindings, gap size, exclusions, focus, and snapping settings and writes `~/.config/windowshift/config.json` if one does not already exist.
+
+## Notes
+
+- WindowShift operates on standard windows (`AXStandardWindow`) with writable Accessibility geometry, temporarily suspends `AXEnhancedUserInterface` for Chromium/Electron apps during resize/move, and clamps oversized minimum-size windows inside the visible display frame.
+- Ad-hoc signatures (`codesign --sign -`) change on rebuild. If a local ad-hoc update stops responding, remove the old Accessibility entry and add `/Applications/WindowShift.app` again.
+- Inspired by [Swift Shift](https://github.com/pablopunk/SwiftShift) and [Rectangle](https://github.com/rxhanson/Rectangle). Independent MIT-licensed Swift implementation based on public macOS APIs.

@@ -41,6 +41,8 @@ enum Windows {
         guard AXUIElementGetPid(window, &pid) == .success,
               pid != ProcessInfo.processInfo.processIdentifier else { return false }
         _ = AXUIElementSetMessagingTimeout(window, 0.08)
+        if let role: String = attribute(window, kAXRoleAttribute), role != kAXWindowRole { return false }
+        if let subrole: String = attribute(window, kAXSubroleAttribute), subrole != kAXStandardWindowSubrole { return false }
         let fullscreen: Bool? = attribute(window, "AXFullScreen")
         return fullscreen != true && writable(window, kAXPositionAttribute)
             && (!resizing || writable(window, kAXSizeAttribute))
@@ -129,16 +131,18 @@ enum Windows {
         body()
     }
 
-    static func apply(_ frame: CGRect, to window: AXUIElement) {
+    static func apply(_ frame: CGRect, to window: AXUIElement, within bounds: CGRect? = nil) {
         _ = AXUIElementSetMessagingTimeout(window, 0.5)
         defer { _ = AXUIElementSetMessagingTimeout(window, 0.08) }
         withEnhancedUISuspended(for: window) {
             resize(window, to: frame.size)
             move(window, to: frame.origin)
             resize(window, to: frame.size)
-            if let actual = Self.frame(window),
-               abs(actual.minX - frame.minX) >= 1 || abs(actual.minY - frame.minY) >= 1 {
-                move(window, to: frame.origin)
+            if let actual = Self.frame(window) {
+                let desired = bounds.map { Layout.clamp(actual, target: frame, within: $0) } ?? frame.origin
+                if abs(actual.minX - desired.x) >= 1 || abs(actual.minY - desired.y) >= 1 {
+                    move(window, to: desired)
+                }
             }
         }
     }

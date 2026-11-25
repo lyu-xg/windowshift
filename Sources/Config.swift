@@ -5,11 +5,14 @@ import Foundation
 struct ConfigFile: Codable, Equatable {
     var moveChord: String?
     var resizeChord: String?
+    var gapSize: Double?
     var edgeSnapping: Bool?
     var smartResize: Bool?
     var focusWindow: Bool?
     var snapToNearbyWindows: Bool?
+    var ignoredApps: [String]?
     var ignoredGestureApps: [String]?
+    var ignoredShortcutApps: [String]?
     var shortcuts: [String: String?]?
 }
 
@@ -100,8 +103,69 @@ final class ConfigStore {
         }
     }
 
+    var gapSize: CGFloat {
+        get {
+            let value = file?.gapSize ?? defaults.double(forKey: "gapSize")
+            return CGFloat(min(100, max(0, value)))
+        }
+        set {
+            let clamped = Double(min(100, max(0, newValue)).rounded())
+            defaults.set(clamped, forKey: "gapSize")
+            updateFile { $0.gapSize = clamped }
+        }
+    }
+
+    var ignoredApps: [String] {
+        file?.ignoredApps ?? (defaults.stringArray(forKey: "ignoredApps") ?? [])
+    }
+
     var ignoredGestureApps: [String] {
         file?.ignoredGestureApps ?? (defaults.stringArray(forKey: "ignoredGestureApps") ?? [])
+    }
+
+    var ignoredShortcutApps: [String] {
+        file?.ignoredShortcutApps ?? (defaults.stringArray(forKey: "ignoredShortcutApps") ?? [])
+    }
+
+    func ignoresGestures(for bundleID: String) -> Bool {
+        ignoredApps.contains(bundleID) || ignoredGestureApps.contains(bundleID)
+    }
+
+    func ignoresShortcuts(for bundleID: String) -> Bool {
+        ignoredApps.contains(bundleID) || ignoredShortcutApps.contains(bundleID)
+    }
+
+    func setShortcut(_ binding: Shortcuts.Binding?, for layout: Layout) {
+        guard let name = Shortcuts.rectangleKeys[layout] else { return }
+        if file != nil {
+            updateFile { current in
+                var map = current.shortcuts ?? snapshot().shortcuts ?? [:]
+                for alias in layout.configKeys where alias != name {
+                    map.removeValue(forKey: alias)
+                }
+                map[name] = binding?.configString
+                current.shortcuts = map
+            }
+        } else {
+            var map = defaults.dictionary(forKey: "rectangleShortcuts") as? [String: [String: Int]] ?? [:]
+            if map.isEmpty {
+                for item in Layout.allCases {
+                    guard let keyName = Shortcuts.rectangleKeys[item] else { continue }
+                    if let existing = shortcutBinding(for: item) {
+                        map[keyName] = ["keyCode": Int(existing.key), "modifierFlags": Int(existing.flags.rawValue)]
+                    } else {
+                        map[keyName] = [:]
+                    }
+                }
+            }
+            if let binding {
+                map[name] = ["keyCode": Int(binding.key), "modifierFlags": Int(binding.flags.rawValue)]
+            } else {
+                map[name] = [:]
+            }
+            defaults.set(map, forKey: "rectangleShortcuts")
+        }
+        onChange?()
     }
 
     func shortcutBinding(for layout: Layout) -> Shortcuts.Binding? {
@@ -127,11 +191,14 @@ final class ConfigStore {
         return ConfigFile(
             moveChord: moveChord.configName,
             resizeChord: resizeChord.configName,
+            gapSize: Double(gapSize),
             edgeSnapping: edgeSnapping,
             smartResize: smartResize,
             focusWindow: focusWindow,
             snapToNearbyWindows: snapToNearbyWindows,
+            ignoredApps: ignoredApps.isEmpty ? nil : ignoredApps,
             ignoredGestureApps: ignoredGestureApps,
+            ignoredShortcutApps: ignoredShortcutApps.isEmpty ? nil : ignoredShortcutApps,
             shortcuts: shortcuts
         )
     }
@@ -228,6 +295,9 @@ final class ConfigStore {
     }
 
     private static func validate(_ config: ConfigFile) -> String? {
+        if let gap = config.gapSize, (gap < 0 || gap > 100 || !gap.isFinite) {
+            return "Invalid gapSize: \(gap)"
+        }
         if let move = config.moveChord, Chord.parse(move) == nil {
             return "Invalid moveChord: \(move)"
         }
@@ -418,7 +488,10 @@ extension Shortcuts.Binding {
     ]
 
     var configString: String? {
-        guard let keyName = Self.keyCodeToName[Int(key)] else { return nil }
+        let keyName = Self.specialCodeToName[Int(key)]
+            ?? KeyboardLayout.character(for: Int(key))?.lowercased()
+            ?? Self.keyCodeToName[Int(key)]
+        guard let keyName else { return nil }
         var parts: [String] = []
         if flags.contains(.control) { parts.append("ctrl") }
         if flags.contains(.option) { parts.append("opt") }
@@ -428,6 +501,34 @@ extension Shortcuts.Binding {
         parts.append(keyName)
         return parts.joined(separator: "+")
     }
+
+    private static let specialCodeToName: [Int: String] = [
+        kVK_Return: "return", kVK_Delete: "delete", kVK_Escape: "escape",
+        kVK_Tab: "tab", kVK_Space: "space",
+        kVK_LeftArrow: "left", kVK_RightArrow: "right",
+        kVK_UpArrow: "up", kVK_DownArrow: "down",
+        kVK_F1: "f1", kVK_F2: "f2", kVK_F3: "f3", kVK_F4: "f4",
+        kVK_F5: "f5", kVK_F6: "f6", kVK_F7: "f7", kVK_F8: "f8",
+        kVK_F9: "f9", kVK_F10: "f10", kVK_F11: "f11", kVK_F12: "f12"
+    ]
+
+    private static let specialNameToCode: [String: Int] = [
+        "return": kVK_Return, "enter": kVK_Return, "↩": kVK_Return,
+        "delete": kVK_Delete, "backspace": kVK_Delete, "⌫": kVK_Delete,
+        "escape": kVK_Escape, "esc": kVK_Escape, "⎋": kVK_Escape,
+        "tab": kVK_Tab, "⇥": kVK_Tab,
+        "space": kVK_Space,
+        "left": kVK_LeftArrow, "←": kVK_LeftArrow,
+        "right": kVK_RightArrow, "→": kVK_RightArrow,
+        "up": kVK_UpArrow, "↑": kVK_UpArrow,
+        "down": kVK_DownArrow, "↓": kVK_DownArrow,
+        "f1": kVK_F1, "f2": kVK_F2, "f3": kVK_F3, "f4": kVK_F4,
+        "f5": kVK_F5, "f6": kVK_F6, "f7": kVK_F7, "f8": kVK_F8,
+        "f9": kVK_F9, "f10": kVK_F10, "f11": kVK_F11, "f12": kVK_F12,
+        "equal": kVK_ANSI_Equal, "plus": kVK_ANSI_Equal, "minus": kVK_ANSI_Minus,
+        "comma": kVK_ANSI_Comma, "period": kVK_ANSI_Period, "slash": kVK_ANSI_Slash,
+        "grave": kVK_ANSI_Grave
+    ]
 
     static func parse(_ spec: String) -> Shortcuts.Binding? {
         let trimmed = spec.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -440,7 +541,11 @@ extension Shortcuts.Binding {
         } else {
             parts = lower.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }
         }
-        guard parts.count >= 2, let keyToken = parts.last, let code = keyNameToCode[keyToken] else { return nil }
+        guard parts.count >= 2, let keyToken = parts.last else { return nil }
+        let code = specialNameToCode[keyToken]
+            ?? (keyToken.count == 1 ? KeyboardLayout.keyCode(for: keyToken) : nil)
+            ?? keyNameToCode[keyToken]
+        guard let code else { return nil }
         var flags: NSEvent.ModifierFlags = []
         for mod in parts.dropLast() {
             switch mod {

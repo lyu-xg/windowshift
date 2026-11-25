@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import Carbon
 import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
@@ -8,21 +9,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let controller = Controller()
     private let shortcuts = Shortcuts()
     private let menu = NSMenu()
+    private var settingsWindow: SettingsWindowController?
     var enableLoginFromImport = false
     private var permissionCheck: Timer?
     private var missingShortcuts: [String] = []
     private var paused = false
+    private var recordingShortcut = false
+    private var frontmostExcluded = false
     private var menuWindow: AXUIElement?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        status.button?.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: "WindowShift")
-        status.button?.image?.isTemplate = true
-        status.button?.toolTip = "WindowShift"
         status.menu = menu
         menu.delegate = self
         shortcuts.onLayout = { [weak self] in self?.controller.perform($0) }
         config.onChange = { [weak self] in self?.reloadConfig() }
         config.startWatching()
+
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(frontmostAppChanged(_:)),
+            name: NSWorkspace.didActivateApplicationNotification,
+            object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(keyboardLayoutChanged),
+            name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
+        updateFrontmostExclusion()
+
         if enableLoginFromImport && SMAppService.mainApp.status == .notRegistered {
             do { try SMAppService.mainApp.register() }
             catch { NSLog("Unable to register WindowShift at login: %@", error.localizedDescription) }
@@ -33,21 +49,97 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    private var shortcutsShouldRun: Bool {
+        controller.isRunning && !recordingShortcut && !frontmostExcluded
+    }
+
+    private func syncShortcuts(forceRestart: Bool = false) {
+        if shortcutsShouldRun {
+            if forceRestart { shortcuts.stop() }
+            missingShortcuts = shortcuts.start()
+        } else {
+            shortcuts.stop()
+            missingShortcuts = []
+        }
+    }
+
     private func reloadConfig() {
         controller.hidePreviewIfDisabled()
-        if controller.isRunning {
-            shortcuts.stop()
-            missingShortcuts = shortcuts.start()
+        updateFrontmostExclusion()
+        syncShortcuts(forceRestart: true)
+        settingsWindow?.reload()
+        updateStatusIcon()
+    }
+
+    private func updateFrontmostExclusion() {
+        let bundleID = NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? ""
+        frontmostExcluded = !bundleID.isEmpty && config.ignoresShortcuts(for: bundleID)
+    }
+
+    @objc private func frontmostAppChanged(_ notification: Notification) {
+        let previous = frontmostExcluded
+        updateFrontmostExclusion()
+        if frontmostExcluded != previous {
+            syncShortcuts()
         }
+    }
+
+    @objc private func keyboardLayoutChanged() {
+        if shortcutsShouldRun {
+            syncShortcuts(forceRestart: true)
+        }
+        settingsWindow?.reload()
     }
 
     private func refreshPermissions() {
         if AXIsProcessTrusted() && !paused {
-            if !controller.isRunning, controller.start() { missingShortcuts = shortcuts.start() }
+            if !controller.isRunning, controller.start() {
+                syncShortcuts(forceRestart: true)
+            }
         } else if controller.isRunning {
             shortcuts.stop()
             controller.stop()
         }
+        updateStatusIcon()
+    }
+
+    private func updateStatusIcon() {
+        guard let button = status.button else { return }
+        let trusted = AXIsProcessTrusted()
+        let running = controller.isRunning
+        let hasError = config.lastError != nil
+
+        let symbolName: String
+        let disabled: Bool
+        let tip: String
+        if !trusted {
+            symbolName = "macwindow.badge.exclamationmark"
+            disabled = true
+            tip = "WindowShift — Accessibility permission required"
+        } else if !running && !paused {
+            symbolName = "macwindow.badge.exclamationmark"
+            disabled = true
+            tip = "WindowShift — Input Monitoring permission required"
+        } else if paused {
+            symbolName = "macwindow"
+            disabled = true
+            tip = "WindowShift — Paused"
+        } else if hasError {
+            symbolName = "macwindow.badge.exclamationmark"
+            disabled = false
+            tip = "WindowShift — Config error: \(config.lastError ?? "")"
+        } else {
+            symbolName = "macwindow"
+            disabled = false
+            tip = "WindowShift"
+        }
+
+        let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "WindowShift")
+            ?? NSImage(systemSymbolName: "macwindow", accessibilityDescription: "WindowShift")
+        image?.isTemplate = true
+        button.image = image
+        button.appearsDisabled = disabled
+        button.toolTip = tip
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -85,14 +177,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Snap at Screen Edges", #selector(toggleSnapping)).state = controller.edgeSnapping ? .on : .off
         add("Snap to Nearby Windows", #selector(toggleNearby)).state = controller.snapToNearbyWindows ? .on : .off
         if let configError = config.lastError {
-            let item = NSMenuItem(title: "Config error: \(configError)", action: nil, keyEquivalent: "")
-            menu.addItem(item)
+            let item = add("Config error: \(configError)", #selector(openConfig))
+            item.toolTip = "Click to open config.json"
         }
         menu.addItem(.separator())
+        add("Settings…", #selector(openSettings), key: ",")
         add("Open Config…", #selector(openConfig))
         if #available(macOS 13.0, *) {
             add("Launch at Login", #selector(toggleLogin)).state = SMAppService.mainApp.status == .enabled ? .on : .off
         }
+        menu.addItem(.separator())
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+        let versionItem = NSMenuItem(title: "WindowShift \(version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
         add("Quit WindowShift", #selector(NSApplication.terminate(_:)), key: "q").target = NSApp
     }
 
@@ -133,6 +231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if chord == controller.resizeChord { controller.resizeChord = controller.moveChord }
             controller.moveChord = chord
         }
+        settingsWindow?.reload()
     }
 
     @objc private func chooseLayout(_ sender: NSMenuItem) {
@@ -156,16 +255,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc private func openSettings() {
+        if settingsWindow == nil {
+            settingsWindow = SettingsWindowController(config: config) { [weak self] recording in
+                self?.recordingShortcut = recording
+                self?.syncShortcuts()
+            }
+        }
+        settingsWindow?.show()
+    }
+
     @objc private func openConfig() {
         _ = config.writeSnapshotIfMissing()
         NSWorkspace.shared.open(config.fileURL.resolvingSymlinksInPath())
     }
 
     @objc private func togglePause() { paused.toggle(); refreshPermissions() }
-    @objc private func toggleSmartResize() { controller.smartResize.toggle() }
-    @objc private func toggleFocus() { controller.focusWindow.toggle() }
-    @objc private func toggleSnapping() { controller.edgeSnapping.toggle() }
-    @objc private func toggleNearby() { controller.snapToNearbyWindows.toggle() }
+    @objc private func toggleSmartResize() { controller.smartResize.toggle(); settingsWindow?.reload() }
+    @objc private func toggleFocus() { controller.focusWindow.toggle(); settingsWindow?.reload() }
+    @objc private func toggleSnapping() { controller.edgeSnapping.toggle(); settingsWindow?.reload() }
+    @objc private func toggleNearby() { controller.snapToNearbyWindows.toggle(); settingsWindow?.reload() }
 
     @objc private func toggleLogin() {
         guard #available(macOS 13.0, *) else { return }
@@ -178,13 +287,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             NSApp.activate(ignoringOtherApps: true)
             alert.runModal()
         }
+        settingsWindow?.reload()
     }
 }
 
-let launchAtLogin = CommandLine.arguments.contains("--import-settings") && ImportedSettings.apply()
-let app = NSApplication.shared
-let delegate = AppDelegate()
-delegate.enableLoginFromImport = launchAtLogin
-app.delegate = delegate
-app.setActivationPolicy(.accessory)
-app.run()
+@main
+struct WindowShiftApp {
+    static func main() {
+        let launchAtLogin = CommandLine.arguments.contains("--import-settings") && ImportedSettings.apply()
+        let bundleID = Bundle.main.bundleIdentifier ?? "dev.windowshift.app"
+        let currentPID = ProcessInfo.processInfo.processIdentifier
+        let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
+            .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
+        guard existing.isEmpty else { return }
+
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        delegate.enableLoginFromImport = launchAtLogin
+        app.delegate = delegate
+        app.setActivationPolicy(.accessory)
+        app.run()
+    }
+}

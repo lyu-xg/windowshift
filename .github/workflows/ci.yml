@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run unit tests
+        run: swift test
+
+      - name: Build universal app bundle
+        run: ./build.sh --universal
+
+      - name: Verify bundle signature and architectures
+        run: |
+          codesign --verify --deep --strict build/WindowShift.app
+          lipo -info build/WindowShift.app/Contents/MacOS/WindowShift | grep -q "arm64"
+          lipo -info build/WindowShift.app/Contents/MacOS/WindowShift | grep -q "x86_64"

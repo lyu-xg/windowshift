@@ -11,14 +11,19 @@ enum Layout: String, CaseIterable {
     case maximize = "Maximize", center = "Center", restore = "Restore"
     case nextDisplay = "Next display", previousDisplay = "Previous display"
 
-    func frame(in screen: CGRect, window: CGRect, cycle: Int = 0) -> CGRect {
+    func frame(in screen: CGRect, window: CGRect, cycle: Int = 0, gap: CGFloat = 0) -> CGRect {
+        let g = max(0, gap)
         let fraction: CGFloat = [0.5, 1.0 / 3, 2.0 / 3][cycle % 3]
         func region(_ x: CGFloat, _ y: CGFloat, _ w: CGFloat, _ h: CGFloat) -> CGRect {
-            let left = (screen.minX + screen.width * x).rounded()
-            let top = (screen.minY + screen.height * y).rounded()
-            let right = (screen.minX + screen.width * (x + w)).rounded()
-            let bottom = (screen.minY + screen.height * (y + h)).rounded()
-            return CGRect(x: left, y: top, width: right - left, height: bottom - top)
+            let leftInset = x <= 0.001 ? g : g / 2
+            let topInset = y <= 0.001 ? g : g / 2
+            let rightInset = (x + w) >= 0.999 ? g : g / 2
+            let bottomInset = (y + h) >= 0.999 ? g : g / 2
+            let left = (screen.minX + screen.width * x + leftInset).rounded()
+            let top = (screen.minY + screen.height * y + topInset).rounded()
+            let right = (screen.minX + screen.width * (x + w) - rightInset).rounded()
+            let bottom = (screen.minY + screen.height * (y + h) - bottomInset).rounded()
+            return CGRect(x: left, y: top, width: max(64, right - left), height: max(48, bottom - top))
         }
         switch self {
         case .left: return region(0, 0, fraction, 1)
@@ -37,20 +42,44 @@ enum Layout: String, CaseIterable {
                           width: window.width, height: window.height)
         case .centerHalf: return region(0.25, 0, 0.5, 1)
         case .maximizeHeight:
-            let width = min(window.width, screen.width)
-            return CGRect(x: min(max(window.minX, screen.minX), screen.maxX - width),
-                          y: screen.minY, width: width, height: screen.height)
-        case .almostMaximize: return region(0.05, 0.05, 0.9, 0.9)
+            let width = min(window.width, max(64, screen.width - 2 * g))
+            let height = max(48, screen.height - 2 * g)
+            return CGRect(x: min(max(window.minX, screen.minX + g), max(screen.minX + g, screen.maxX - g - width)),
+                          y: screen.minY + g, width: width, height: height)
+        case .almostMaximize:
+            let dx = max(screen.width * 0.05, g)
+            let dy = max(screen.height * 0.05, g)
+            let left = (screen.minX + dx).rounded()
+            let top = (screen.minY + dy).rounded()
+            let right = (screen.maxX - dx).rounded()
+            let bottom = (screen.maxY - dy).rounded()
+            return CGRect(x: left, y: top, width: max(64, right - left), height: max(48, bottom - top))
         case .larger, .smaller:
             let step: CGFloat = self == .larger ? 0.1 : -0.1
-            let width = min(screen.width, max(64, window.width + step * screen.width))
-            let height = min(screen.height, max(48, window.height + step * screen.height))
-            return CGRect(x: min(max(window.midX - width / 2, screen.minX), screen.maxX - width),
-                          y: min(max(window.midY - height / 2, screen.minY), screen.maxY - height),
+            let maxWidth = max(64, screen.width - 2 * g)
+            let maxHeight = max(48, screen.height - 2 * g)
+            let width = min(maxWidth, max(64, window.width + step * screen.width))
+            let height = min(maxHeight, max(48, window.height + step * screen.height))
+            return CGRect(x: min(max(window.midX - width / 2, screen.minX + g), max(screen.minX + g, screen.maxX - g - width)),
+                          y: min(max(window.midY - height / 2, screen.minY + g), max(screen.minY + g, screen.maxY - g - height)),
                           width: width, height: height)
-        case .maximize: return screen
+        case .maximize: return region(0, 0, 1, 1)
         case .restore, .nextDisplay, .previousDisplay: return window
         }
+    }
+
+    static func clamp(_ actual: CGRect, target: CGRect, within bounds: CGRect) -> CGPoint {
+        var x = target.minX
+        var y = target.minY
+        if actual.width > target.width {
+            x = min(x, bounds.maxX - actual.width)
+        }
+        if actual.height > target.height {
+            y = min(y, bounds.maxY - actual.height)
+        }
+        x = max(bounds.minX, min(x, max(bounds.minX, bounds.maxX - actual.width)))
+        y = max(bounds.minY, min(y, max(bounds.minY, bounds.maxY - actual.height)))
+        return CGPoint(x: x.rounded(), y: y.rounded())
     }
 
     var cycles: Bool {

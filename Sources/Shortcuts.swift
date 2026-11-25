@@ -1,6 +1,50 @@
 import AppKit
 import Carbon
 
+enum KeyboardLayout {
+    private static let printableKeyCodes: [Int] = [
+        kVK_ANSI_A, kVK_ANSI_S, kVK_ANSI_D, kVK_ANSI_F, kVK_ANSI_H, kVK_ANSI_G,
+        kVK_ANSI_Z, kVK_ANSI_X, kVK_ANSI_C, kVK_ANSI_V, kVK_ANSI_B, kVK_ANSI_Q,
+        kVK_ANSI_W, kVK_ANSI_E, kVK_ANSI_R, kVK_ANSI_Y, kVK_ANSI_T,
+        kVK_ANSI_1, kVK_ANSI_2, kVK_ANSI_3, kVK_ANSI_4, kVK_ANSI_6, kVK_ANSI_5,
+        kVK_ANSI_Equal, kVK_ANSI_9, kVK_ANSI_7, kVK_ANSI_Minus, kVK_ANSI_8, kVK_ANSI_0,
+        kVK_ANSI_RightBracket, kVK_ANSI_O, kVK_ANSI_U, kVK_ANSI_LeftBracket, kVK_ANSI_I,
+        kVK_ANSI_P, kVK_ANSI_L, kVK_ANSI_J, kVK_ANSI_Quote, kVK_ANSI_K,
+        kVK_ANSI_Semicolon, kVK_ANSI_Backslash, kVK_ANSI_Comma, kVK_ANSI_Slash,
+        kVK_ANSI_N, kVK_ANSI_M, kVK_ANSI_Period, kVK_ANSI_Grave, kVK_ISO_Section
+    ]
+
+    static func character(for keyCode: Int) -> String? {
+        guard let source = TISCopyCurrentASCIICapableKeyboardLayoutInputSource()?.takeRetainedValue(),
+              let raw = TISGetInputSourceProperty(source, kTISPropertyUnicodeKeyLayoutData) else { return nil }
+        let data = Unmanaged<CFData>.fromOpaque(raw).takeUnretainedValue() as Data
+        return data.withUnsafeBytes { bytes -> String? in
+            guard let layout = bytes.bindMemory(to: UCKeyboardLayout.self).baseAddress else { return nil }
+            var deadKeyState: UInt32 = 0
+            var chars = [UniChar](repeating: 0, count: 4)
+            var length = 0
+            let status = UCKeyTranslate(
+                layout, UInt16(keyCode), UInt16(kUCKeyActionDisplay),
+                0, UInt32(LMGetKbdType()), OptionBits(kUCKeyTranslateNoDeadKeysBit),
+                &deadKeyState, chars.count, &length, &chars
+            )
+            guard status == noErr, length > 0 else { return nil }
+            let value = String(utf16CodeUnits: chars, count: length).trimmingCharacters(in: .whitespacesAndNewlines)
+            return value.isEmpty ? nil : value
+        }
+    }
+
+    static func keyCode(for character: String) -> Int? {
+        let target = character.lowercased()
+        for code in printableKeyCodes {
+            if let mapped = self.character(for: code)?.lowercased(), mapped == target {
+                return code
+            }
+        }
+        return nil
+    }
+}
+
 final class Shortcuts {
     static let rectangleKeys: [Layout: String] = [
         .left: "leftHalf", .right: "rightHalf", .top: "topHalf", .bottom: "bottomHalf",
@@ -41,9 +85,13 @@ final class Shortcuts {
             let special: [Int: String] = [
                 kVK_LeftArrow: "←", kVK_RightArrow: "→", kVK_UpArrow: "↑",
                 kVK_DownArrow: "↓", kVK_Return: "↩", kVK_Delete: "⌫", kVK_Escape: "⎋",
-                kVK_Tab: "⇥", kVK_Space: "Space"
+                kVK_Tab: "⇥", kVK_Space: "Space",
+                kVK_F1: "F1", kVK_F2: "F2", kVK_F3: "F3", kVK_F4: "F4",
+                kVK_F5: "F5", kVK_F6: "F6", kVK_F7: "F7", kVK_F8: "F8",
+                kVK_F9: "F9", kVK_F10: "F10", kVK_F11: "F11", kVK_F12: "F12"
             ]
-            let character = special[Int(key)] ?? Self.ansiLabel(Int(key)) ?? "Key \(key)"
+            let dynamic = KeyboardLayout.character(for: Int(key))?.uppercased()
+            let character = special[Int(key)] ?? dynamic ?? Self.ansiLabel(Int(key)) ?? "Key \(key)"
             return prefix + character
         }
 

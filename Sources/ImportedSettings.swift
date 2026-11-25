@@ -34,6 +34,9 @@ enum ImportedSettings {
             if let snapping = rectangle["windowSnapping"] as? Int, snapping != 0 {
                 defaults.set(snapping == 2, forKey: "edgeSnapping")
             }
+            if let gap = rectangle["gapSize"] as? Double, gap >= 0, gap <= 100 {
+                defaults.set(gap, forKey: "gapSize")
+            }
         }
         if defaults === UserDefaults.standard, (!swiftShift.isEmpty || !rectangle.isEmpty), !ConfigStore.shared.hasFile {
             _ = ConfigStore.shared.write(ConfigStore.shared.snapshot())
