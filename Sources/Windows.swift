@@ -33,7 +33,7 @@ enum Windows {
         guard let app = NSWorkspace.shared.frontmostApplication,
               app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return nil }
         let element = AXUIElementCreateApplication(app.processIdentifier)
-        return self.element(element, kAXFocusedWindowAttribute)
+        return self.element(element, kAXFocusedWindowAttribute) ?? self.element(element, kAXMainWindowAttribute)
     }
 
     static func prepare(_ window: AXUIElement, resizing: Bool) -> Bool {
@@ -108,10 +108,39 @@ enum Windows {
         return AXUIElementSetAttributeValue(window, kAXSizeAttribute as CFString, value) == .success
     }
 
+    static func suspendEnhancedUI(for window: AXUIElement) -> AXUIElement? {
+        var pid: pid_t = 0
+        guard AXUIElementGetPid(window, &pid) == .success else { return nil }
+        let app = AXUIElementCreateApplication(pid)
+        _ = AXUIElementSetMessagingTimeout(app, 0.25)
+        guard attribute(app, "AXEnhancedUserInterface", as: Bool.self) == true else { return nil }
+        AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanFalse)
+        return app
+    }
+
+    static func restoreEnhancedUI(_ app: AXUIElement?) {
+        guard let app else { return }
+        AXUIElementSetAttributeValue(app, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+    }
+
+    static func withEnhancedUISuspended(for window: AXUIElement, _ body: () -> Void) {
+        let app = suspendEnhancedUI(for: window)
+        defer { restoreEnhancedUI(app) }
+        body()
+    }
+
     static func apply(_ frame: CGRect, to window: AXUIElement) {
-        move(window, to: frame.origin)
-        resize(window, to: frame.size)
-        move(window, to: frame.origin)
+        _ = AXUIElementSetMessagingTimeout(window, 0.5)
+        defer { _ = AXUIElementSetMessagingTimeout(window, 0.08) }
+        withEnhancedUISuspended(for: window) {
+            resize(window, to: frame.size)
+            move(window, to: frame.origin)
+            resize(window, to: frame.size)
+            if let actual = Self.frame(window),
+               abs(actual.minX - frame.minX) >= 1 || abs(actual.minY - frame.minY) >= 1 {
+                move(window, to: frame.origin)
+            }
+        }
     }
 }
 

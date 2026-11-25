@@ -31,6 +31,7 @@ final class Controller {
     private struct Gesture {
         let mode: Mode
         let window: AXUIElement
+        let enhancedUIApp: AXUIElement?
         let start: CGPoint
         let frame: CGRect
         let neighbors: [CGRect]
@@ -124,6 +125,7 @@ final class Controller {
     }
 
     private func reset() {
+        Windows.restoreEnhancedUI(gesture?.enhancedUIApp)
         pending = nil
         mode = nil
         anchor = nil
@@ -202,11 +204,13 @@ final class Controller {
         guard drag == nil else { return }
         let next: Mode? = modifiers == moveChord.flags ? .move : modifiers == resizeChord.flags ? .resize : nil
         guard next != mode else { return }
-        if next == nil, let gesture, gesture.mode == .move {
-            commitSnap(at: point, window: gesture.window, original: gesture.frame)
+        let previousGesture = gesture
+        gesture = nil
+        defer { Windows.restoreEnhancedUI(previousGesture?.enhancedUIApp) }
+        if next == nil, let previousGesture, previousGesture.mode == .move {
+            commitSnap(at: point, window: previousGesture.window, original: previousGesture.frame)
         }
         preview.hide()
-        gesture = nil
         mode = next
         anchor = next == nil ? nil : point
     }
@@ -221,7 +225,8 @@ final class Controller {
                   let frame = Windows.frame(window) else { anchor = nil; return }
             if focusWindow { Windows.focus(window) }
             let neighbors = mode == .move && snapToNearbyWindows ? Windows.nearbyFrames(excluding: window, frame: frame) : []
-            gesture = Gesture(mode: mode, window: window, start: start, frame: frame, neighbors: neighbors)
+            let enhancedUIApp = Windows.suspendEnhancedUI(for: window)
+            gesture = Gesture(mode: mode, window: window, enhancedUIApp: enhancedUIApp, start: start, frame: frame, neighbors: neighbors)
         }
         guard let gesture else { return }
         let delta = CGPoint(x: point.x - gesture.start.x, y: point.y - gesture.start.y)
@@ -298,8 +303,11 @@ final class Controller {
     private func place(_ layout: Layout, window: AXUIElement, target: CGRect, previous: CGRect, cycle: Int) {
         let history = placements.first { CFEqual($0.window, window) }
         let original = history.map { close(previous, $0.applied) ? $0.original : previous } ?? previous
-        if layout == .center { Windows.move(window, to: target.origin) }
-        else { Windows.apply(target, to: window) }
+        if layout == .center {
+            Windows.withEnhancedUISuspended(for: window) { Windows.move(window, to: target.origin) }
+        } else {
+            Windows.apply(target, to: window)
+        }
         guard let applied = Windows.frame(window) else { return }
         placements.removeAll { CFEqual($0.window, window) }
         placements.append(Placement(window: window, original: original, applied: applied, layout: layout, cycle: cycle))
