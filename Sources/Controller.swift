@@ -51,37 +51,46 @@ final class Controller {
         var cycle: Int
     }
 
-    private let preferences = UserDefaults.standard
+    private let config: ConfigStore
+
+    init(config: ConfigStore = .shared) {
+        self.config = config
+    }
+
     var moveChord: Chord {
-        get { Chord(rawValue: preferences.string(forKey: "moveChord") ?? "") ?? .controlCommand }
-        set { preferences.set(newValue.rawValue, forKey: "moveChord") }
+        get { config.moveChord }
+        set { config.moveChord = newValue }
     }
     var resizeChord: Chord {
-        get { Chord(rawValue: preferences.string(forKey: "resizeChord") ?? "") ?? .controlCommandShift }
-        set { preferences.set(newValue.rawValue, forKey: "resizeChord") }
+        get { config.resizeChord }
+        set { config.resizeChord = newValue }
     }
     var smartResize: Bool {
-        get { preferences.object(forKey: "smartResize") as? Bool ?? true }
-        set { preferences.set(newValue, forKey: "smartResize") }
+        get { config.smartResize }
+        set { config.smartResize = newValue }
     }
     var focusWindow: Bool {
-        get { preferences.bool(forKey: "focusWindow") }
-        set { preferences.set(newValue, forKey: "focusWindow") }
+        get { config.focusWindow }
+        set { config.focusWindow = newValue }
     }
     var snapToNearbyWindows: Bool {
-        get { preferences.bool(forKey: "snapToNearbyWindows") }
-        set { preferences.set(newValue, forKey: "snapToNearbyWindows") }
+        get { config.snapToNearbyWindows }
+        set { config.snapToNearbyWindows = newValue }
     }
     var edgeSnapping: Bool {
-        get { preferences.object(forKey: "edgeSnapping") as? Bool ?? true }
-        set { preferences.set(newValue, forKey: "edgeSnapping"); if !newValue { preview.hide() } }
+        get { config.edgeSnapping }
+        set { config.edgeSnapping = newValue; if !newValue { preview.hide() } }
+    }
+
+    func hidePreviewIfDisabled() {
+        if !edgeSnapping { preview.hide() }
     }
 
     private func acceptsGesture(on window: AXUIElement) -> Bool {
         var pid: pid_t = 0
         guard AXUIElementGetPid(window, &pid) == .success,
               let bundleID = NSRunningApplication(processIdentifier: pid)?.bundleIdentifier else { return true }
-        return !(preferences.stringArray(forKey: "ignoredGestureApps") ?? []).contains(bundleID)
+        return !config.ignoredGestureApps.contains(bundleID)
     }
 
     private let preview = SnapPreview()

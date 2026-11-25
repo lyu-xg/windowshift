@@ -29,6 +29,28 @@ The menu lets you choose move and resize modifiers, toggle quadrant resizing and
 
 Inspired by [Swift Shift](https://github.com/pablopunk/SwiftShift) and [Rectangle](https://github.com/rxhanson/Rectangle). This is an independent Swift implementation based on public macOS APIs.
 
+## Configuration
+
+WindowShift watches `~/.config/windowshift/config.json` (or `$XDG_CONFIG_HOME/windowshift/config.json`) and hot-reloads changes on save, including keyboard shortcuts and symlinked dotfiles. Choose **Open Config…** from the menu bar to generate or open it. When `config.json` is absent, WindowShift falls back to `UserDefaults`.
+
+```json
+{
+  "moveChord": "opt+cmd",
+  "resizeChord": "shift+cmd",
+  "edgeSnapping": true,
+  "smartResize": false,
+  "focusWindow": false,
+  "snapToNearbyWindows": true,
+  "ignoredGestureApps": [],
+  "shortcuts": {
+    "leftHalf": "opt+cmd+h",
+    "rightHalf": "opt+cmd+l",
+    "maximize": "opt+cmd+return",
+    "centerThird": null
+  }
+}
+```
+
 ## Installing locally
 
 Copy the built bundle into `/Applications` before approving it under **System Settings → Privacy & Security → Accessibility**. Ad-hoc signatures change when the app is rebuilt. If an update stops responding, remove the old Accessibility entry and add the installed copy again. To start it automatically, add the installed bundle under **General → Login Items & Extensions → Open at Login**.

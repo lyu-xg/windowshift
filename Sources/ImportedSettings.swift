@@ -35,6 +35,9 @@ enum ImportedSettings {
                 defaults.set(snapping == 2, forKey: "edgeSnapping")
             }
         }
+        if defaults === UserDefaults.standard, (!swiftShift.isEmpty || !rectangle.isEmpty), !ConfigStore.shared.hasFile {
+            _ = ConfigStore.shared.write(ConfigStore.shared.snapshot())
+        }
         return rectangle["launchOnLogin"] as? Bool == true || swiftShift["launchAtLogin"] as? Bool == true
     }
 

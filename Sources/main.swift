@@ -4,6 +4,7 @@ import ServiceManagement
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let status = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let config = ConfigStore.shared
     private let controller = Controller()
     private let shortcuts = Shortcuts()
     private let menu = NSMenu()
@@ -20,6 +21,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         status.menu = menu
         menu.delegate = self
         shortcuts.onLayout = { [weak self] in self?.controller.perform($0) }
+        config.onChange = { [weak self] in self?.reloadConfig() }
+        config.startWatching()
         if enableLoginFromImport && SMAppService.mainApp.status == .notRegistered {
             do { try SMAppService.mainApp.register() }
             catch { NSLog("Unable to register WindowShift at login: %@", error.localizedDescription) }
@@ -27,6 +30,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refreshPermissions()
         permissionCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             self?.refreshPermissions()
+        }
+    }
+
+    private func reloadConfig() {
+        controller.hidePreviewIfDisabled()
+        if controller.isRunning {
+            shortcuts.stop()
+            missingShortcuts = shortcuts.start()
         }
     }
 
@@ -73,7 +84,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add("Focus Window During Gesture", #selector(toggleFocus)).state = controller.focusWindow ? .on : .off
         add("Snap at Screen Edges", #selector(toggleSnapping)).state = controller.edgeSnapping ? .on : .off
         add("Snap to Nearby Windows", #selector(toggleNearby)).state = controller.snapToNearbyWindows ? .on : .off
+        if let configError = config.lastError {
+            let item = NSMenuItem(title: "Config error: \(configError)", action: nil, keyEquivalent: "")
+            menu.addItem(item)
+        }
         menu.addItem(.separator())
+        add("Open Config…", #selector(openConfig))
         if #available(macOS 13.0, *) {
             add("Launch at Login", #selector(toggleLogin)).state = SMAppService.mainApp.status == .enabled ? .on : .off
         }
@@ -138,6 +154,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent") {
             NSWorkspace.shared.open(url)
         }
+    }
+
+    @objc private func openConfig() {
+        _ = config.writeSnapshotIfMissing()
+        NSWorkspace.shared.open(config.fileURL.resolvingSymlinksInPath())
     }
 
     @objc private func togglePause() { paused.toggle(); refreshPermissions() }

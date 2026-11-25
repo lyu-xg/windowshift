@@ -62,7 +62,11 @@ final class Shortcuts {
         }
     }
 
-    static func binding(for layout: Layout, defaults: UserDefaults = .standard) -> Binding? {
+    static func binding(for layout: Layout, config: ConfigStore = .shared) -> Binding? {
+        config.shortcutBinding(for: layout)
+    }
+
+    static func defaultsBinding(for layout: Layout, defaults: UserDefaults = .standard) -> Binding? {
         if let imported = defaults.dictionary(forKey: "rectangleShortcuts") {
             guard let name = rectangleKeys[layout], let entry = imported[name] as? [String: Int],
                   let key = entry["keyCode"], (0...127).contains(key),
