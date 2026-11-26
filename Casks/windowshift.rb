@@ -1,6 +1,6 @@
 cask "windowshift" do
   version "0.2.1"
-  sha256 "4f640e6dc9ebf3d3b7e092863f7b9c8ea6d9f4da8cc048233d5a18e264ea7772"
+  sha256 "7f4e9395ba73ab0354a1543fb08340603b8c44f7d95bf9367d6b7dbd217d9f70"
 
   url "https://github.com/lyu-xg/windowshift/releases/download/v#{version}/WindowShift-v#{version}-universal.zip"
   name "WindowShift"
