@@ -89,6 +89,7 @@ final class WindowShiftTests: XCTestCase {
           "moveChord": "opt+cmd",
           "resizeChord": "shift+cmd",
           "gapSize": 8,
+          "hideMenubarIcon": true,
           "edgeSnapping": true,
           "smartResize": false,
           "focusWindow": false,
@@ -115,6 +116,7 @@ final class WindowShiftTests: XCTestCase {
         XCTAssertEqual(store.moveChord, .optionCommand)
         XCTAssertEqual(store.resizeChord, .shiftCommand)
         XCTAssertEqual(store.gapSize, 8)
+        XCTAssertTrue(store.hideMenubarIcon)
         XCTAssertTrue(store.ignoresGestures(for: "com.parallels.desktop.console"))
         XCTAssertTrue(store.ignoresShortcuts(for: "com.parallels.desktop.console"))
         XCTAssertTrue(store.ignoresGestures(for: "com.pointum.hazeover"))

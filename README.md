@@ -1,6 +1,8 @@
 # WindowShift
 
-WindowShift combines modifier-held mouse movement and resizing with keyboard layouts and screen-edge snapping in one lightweight macOS menu-bar app. It runs on macOS 13 (Ventura) or later, has zero external dependencies, and builds with the Xcode Command Line Tools.
+WindowShift combines modifier-held mouse movement and resizing with keyboard layouts and screen-edge snapping in one lightweight macOS menu-bar app (~1 MB universal binary, ~14 MB RAM, 0% idle CPU, zero dependencies). It runs on macOS 13 (Ventura) or later and is Developer ID–signed and notarized.
+
+![WindowShift Demo](docs/demo.gif)
 
 ## Install
 
@@ -51,11 +53,16 @@ Repeat an edge shortcut to cycle from half to one-third to two-thirds. For edge 
 
 Use **Settings…** (`⌘,`) from the menu bar to adjust chords, window gap, toggles, and record keyboard shortcuts, or edit `~/.config/windowshift/config.json` (or `$XDG_CONFIG_HOME/windowshift/config.json`) directly. WindowShift watches the resolved file and parent directory so symlinked dotfiles and atomic editor saves hot-reload settings and re-register hotkeys automatically. When `config.json` is absent, WindowShift falls back to `UserDefaults`.
 
+<p align="center">
+  <img src="docs/settings.png" alt="WindowShift Settings" width="460">
+</p>
+
 ```json
 {
   "moveChord": "opt+cmd",
   "resizeChord": "shift+cmd",
   "gapSize": 0,
+  "hideMenubarIcon": false,
   "edgeSnapping": true,
   "smartResize": false,
   "focusWindow": false,
@@ -79,6 +86,7 @@ Use **Settings…** (`⌘,`) from the menu bar to adjust chords, window gap, tog
 ```
 
 - `gapSize`: outer screen margin and spacing between adjacent panes (`0–100` px).
+- `hideMenubarIcon`: hides the menu-bar icon while active; reopen WindowShift from Spotlight or `/Applications` to open Settings (the icon automatically reappears if permissions are missing or `config.json` has an error).
 - `ignoredApps`: bundle IDs excluded from both mouse gestures and global shortcuts (hotkeys are temporarily unregistered while an excluded app is frontmost).
 - `ignoredGestureApps` / `ignoredShortcutApps`: fine-grained exclusions for gestures or shortcuts only.
 - `shortcuts`: set any layout to `null` (or omit it) to leave it unbound.

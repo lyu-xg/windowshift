@@ -6,6 +6,7 @@ struct ConfigFile: Codable, Equatable {
     var moveChord: String?
     var resizeChord: String?
     var gapSize: Double?
+    var hideMenubarIcon: Bool?
     var edgeSnapping: Bool?
     var smartResize: Bool?
     var focusWindow: Bool?
@@ -103,6 +104,14 @@ final class ConfigStore {
         }
     }
 
+    var hideMenubarIcon: Bool {
+        get { file?.hideMenubarIcon ?? defaults.bool(forKey: "hideMenubarIcon") }
+        set {
+            defaults.set(newValue, forKey: "hideMenubarIcon")
+            updateFile { $0.hideMenubarIcon = newValue }
+        }
+    }
+
     var gapSize: CGFloat {
         get {
             let value = file?.gapSize ?? defaults.double(forKey: "gapSize")
@@ -192,6 +201,7 @@ final class ConfigStore {
             moveChord: moveChord.configName,
             resizeChord: resizeChord.configName,
             gapSize: Double(gapSize),
+            hideMenubarIcon: hideMenubarIcon ? true : nil,
             edgeSnapping: edgeSnapping,
             smartResize: smartResize,
             focusWindow: focusWindow,

@@ -37,6 +37,9 @@ enum ImportedSettings {
             if let gap = rectangle["gapSize"] as? Double, gap >= 0, gap <= 100 {
                 defaults.set(gap, forKey: "gapSize")
             }
+            if let hideIcon = rectangle["hideMenubarIcon"] as? Bool {
+                defaults.set(hideIcon, forKey: "hideMenubarIcon")
+            }
         }
         if defaults === UserDefaults.standard, (!swiftShift.isEmpty || !rectangle.isEmpty), !ConfigStore.shared.hasFile {
             _ = ConfigStore.shared.write(ConfigStore.shared.snapshot())

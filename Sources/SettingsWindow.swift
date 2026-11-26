@@ -14,6 +14,7 @@ final class SettingsWindowController: NSWindowController {
     private var smartCheck = NSButton(checkboxWithTitle: "Resize from Pointer Quadrant", target: nil, action: nil)
     private var focusCheck = NSButton(checkboxWithTitle: "Focus Window During Gesture", target: nil, action: nil)
     private var nearbyCheck = NSButton(checkboxWithTitle: "Snap to Nearby Windows", target: nil, action: nil)
+    private var hideIconCheck = NSButton(checkboxWithTitle: "Hide Menu Bar Icon (reopen app for Settings)", target: nil, action: nil)
     private var loginCheck = NSButton(checkboxWithTitle: "Launch at Login", target: nil, action: nil)
     private var errorLabel = NSTextField(labelWithString: "")
     private var recorderButtons: [Layout: ShortcutRecorderButton] = [:]
@@ -25,7 +26,7 @@ final class SettingsWindowController: NSWindowController {
         self.onRecordingChanged = onRecordingChanged
         self.onPreferencesChanged = onPreferencesChanged
         let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
+            contentRect: NSRect(x: 0, y: 0, width: 460, height: 590),
             styleMask: [.titled, .closable, .miniaturizable],
             backing: .buffered,
             defer: false
@@ -57,6 +58,7 @@ final class SettingsWindowController: NSWindowController {
         smartCheck.state = config.smartResize ? .on : .off
         focusCheck.state = config.focusWindow ? .on : .off
         nearbyCheck.state = config.snapToNearbyWindows ? .on : .off
+        hideIconCheck.state = config.hideMenubarIcon ? .on : .off
         if #available(macOS 13.0, *) {
             loginCheck.state = SMAppService.mainApp.status == .enabled ? .on : .off
         }
@@ -135,6 +137,7 @@ final class SettingsWindowController: NSWindowController {
             (smartCheck, #selector(toggleSmart)),
             (focusCheck, #selector(toggleFocus)),
             (nearbyCheck, #selector(toggleNearby)),
+            (hideIconCheck, #selector(toggleHideIcon)),
             (loginCheck, #selector(toggleLogin))
         ]
         let toggleStack = NSStackView()
@@ -191,6 +194,9 @@ final class SettingsWindowController: NSWindowController {
         let scroll = NSScrollView()
         scroll.hasVerticalScroller = true
         scroll.borderType = .bezelBorder
+        let clip = FlippedClipView()
+        clip.drawsBackground = false
+        scroll.contentView = clip
         scroll.documentView = listStack
         scroll.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -201,7 +207,7 @@ final class SettingsWindowController: NSWindowController {
 
         let openButton = NSButton(title: "Open config.json…", target: self, action: #selector(openConfig))
         openButton.bezelStyle = .rounded
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.1"
         let versionLabel = NSTextField(labelWithString: "WindowShift \(version)")
         versionLabel.textColor = .secondaryLabelColor
         versionLabel.font = .systemFont(ofSize: 11)
@@ -251,6 +257,7 @@ final class SettingsWindowController: NSWindowController {
     @objc private func toggleSmart() { config.smartResize = smartCheck.state == .on }
     @objc private func toggleFocus() { config.focusWindow = focusCheck.state == .on }
     @objc private func toggleNearby() { config.snapToNearbyWindows = nearbyCheck.state == .on }
+    @objc private func toggleHideIcon() { config.hideMenubarIcon = hideIconCheck.state == .on; onPreferencesChanged() }
 
     @objc private func toggleLogin() {
         guard #available(macOS 13.0, *) else { return }
@@ -276,6 +283,10 @@ final class SettingsWindowController: NSWindowController {
         _ = config.writeSnapshotIfMissing()
         NSWorkspace.shared.open(config.fileURL.resolvingSymlinksInPath())
     }
+}
+
+private final class FlippedClipView: NSClipView {
+    override var isFlipped: Bool { true }
 }
 
 private final class ShortcutRecorderButton: NSButton {

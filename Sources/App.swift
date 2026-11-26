@@ -11,7 +11,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private var settingsWindow: SettingsWindowController?
     var enableLoginFromImport = false
+    static let openSettingsNotification = NSNotification.Name("dev.windowshift.app.openSettings")
+
     private struct StatusIconState: Equatable {
+        let visible: Bool
         let symbolName: String
         let disabled: Bool
         let tooltip: String
@@ -48,6 +51,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self,
             selector: #selector(keyboardLayoutChanged),
             name: NSNotification.Name(kTISNotifySelectedKeyboardInputSourceChanged as String),
+            object: nil
+        )
+        DistributedNotificationCenter.default().addObserver(
+            self,
+            selector: #selector(openSettings),
+            name: Self.openSettingsNotification,
             object: nil
         )
         updateFrontmostExclusion()
@@ -163,16 +172,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             tip = "WindowShift"
         }
 
-        let next = StatusIconState(symbolName: symbolName, disabled: disabled, tooltip: tip)
+        let visible = !(config.hideMenubarIcon && trusted && running && !paused && !hasError)
+        let next = StatusIconState(visible: visible, symbolName: symbolName, disabled: disabled, tooltip: tip)
         guard next != lastIconState else { return }
         lastIconState = next
 
+        status.isVisible = visible
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "WindowShift")
             ?? NSImage(systemSymbolName: "macwindow", accessibilityDescription: "WindowShift")
         image?.isTemplate = true
         button.image = image
         button.appearsDisabled = disabled
         button.toolTip = tip
+    }
+
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        openSettings()
+        return false
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
@@ -221,7 +237,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             add("Launch at Login", #selector(toggleLogin)).state = SMAppService.mainApp.status == .enabled ? .on : .off
         }
         menu.addItem(.separator())
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.0"
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.2.1"
         let versionItem = NSMenuItem(title: "WindowShift \(version)", action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
         menu.addItem(versionItem)
@@ -299,6 +315,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 },
                 onPreferencesChanged: { [weak self] in
                     self?.controller.refreshCachedPreferences()
+                    self?.updateStatusIcon()
                 }
             )
         }
@@ -339,7 +356,15 @@ struct WindowShiftApp {
         let currentPID = ProcessInfo.processInfo.processIdentifier
         let existing = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID)
             .filter { $0.processIdentifier != currentPID && !$0.isTerminated }
-        guard existing.isEmpty else { return }
+        if !existing.isEmpty {
+            DistributedNotificationCenter.default().postNotificationName(
+                AppDelegate.openSettingsNotification,
+                object: nil,
+                userInfo: nil,
+                deliverImmediately: true
+            )
+            return
+        }
 
         let app = NSApplication.shared
         let delegate = AppDelegate()
