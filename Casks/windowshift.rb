@@ -7,7 +7,7 @@ cask "windowshift" do
   desc "Modifier-held window move/resize, keyboard layouts, and screen-edge snapping"
   homepage "https://github.com/lyu-xg/windowshift"
 
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "WindowShift.app"
 
