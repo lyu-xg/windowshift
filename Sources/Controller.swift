@@ -52,18 +52,30 @@ final class Controller {
     }
 
     private let config: ConfigStore
+    private var cachedMoveFlags: CGEventFlags = []
+    private var cachedResizeFlags: CGEventFlags = []
+    private var cachedEdgeSnapping = true
+    private var pendingLeftDown = false
 
     init(config: ConfigStore = .shared) {
         self.config = config
+        refreshCachedPreferences()
+    }
+
+    func refreshCachedPreferences() {
+        cachedMoveFlags = config.moveChord.flags
+        cachedResizeFlags = config.resizeChord.flags
+        cachedEdgeSnapping = config.edgeSnapping
+        if !cachedEdgeSnapping { preview.hide() }
     }
 
     var moveChord: Chord {
         get { config.moveChord }
-        set { config.moveChord = newValue }
+        set { config.moveChord = newValue; cachedMoveFlags = newValue.flags }
     }
     var resizeChord: Chord {
         get { config.resizeChord }
-        set { config.resizeChord = newValue }
+        set { config.resizeChord = newValue; cachedResizeFlags = newValue.flags }
     }
     var smartResize: Bool {
         get { config.smartResize }
@@ -79,7 +91,7 @@ final class Controller {
     }
     var edgeSnapping: Bool {
         get { config.edgeSnapping }
-        set { config.edgeSnapping = newValue; if !newValue { preview.hide() } }
+        set { config.edgeSnapping = newValue; cachedEdgeSnapping = newValue; if !newValue { preview.hide() } }
     }
 
     var gapSize: CGFloat {
@@ -88,7 +100,7 @@ final class Controller {
     }
 
     func hidePreviewIfDisabled() {
-        if !edgeSnapping { preview.hide() }
+        refreshCachedPreferences()
     }
 
     private func acceptsGesture(on window: AXUIElement) -> Bool {
@@ -141,6 +153,7 @@ final class Controller {
     private func reset() {
         Windows.restoreEnhancedUI(gesture?.enhancedUIApp)
         pending = nil
+        pendingLeftDown = false
         mode = nil
         anchor = nil
         gesture = nil
@@ -155,6 +168,21 @@ final class Controller {
             return
         }
         let modifiers = flags.intersection(Chord.modifiers)
+        switch type {
+        case .mouseMoved:
+            if mode == nil && modifiers != cachedMoveFlags && modifiers != cachedResizeFlags { return }
+        case .flagsChanged:
+            if mode == nil && drag == nil && modifiers != cachedMoveFlags && modifiers != cachedResizeFlags { return }
+        case .leftMouseDown:
+            if !cachedEdgeSnapping { return }
+            pendingLeftDown = true
+        case .leftMouseDragged:
+            if drag == nil && !pendingLeftDown { return }
+        case .leftMouseUp:
+            if drag == nil && !pendingLeftDown { return }
+        default:
+            return
+        }
         DispatchQueue.main.async { [weak self] in self?.enqueue(type, at: point, modifiers: modifiers) }
     }
 

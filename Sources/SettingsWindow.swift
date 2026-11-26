@@ -5,6 +5,7 @@ import ServiceManagement
 final class SettingsWindowController: NSWindowController {
     private let config: ConfigStore
     private let onRecordingChanged: (Bool) -> Void
+    private let onPreferencesChanged: () -> Void
     private var movePopup = NSPopUpButton()
     private var resizePopup = NSPopUpButton()
     private var gapField = NSTextField()
@@ -17,9 +18,12 @@ final class SettingsWindowController: NSWindowController {
     private var errorLabel = NSTextField(labelWithString: "")
     private var recorderButtons: [Layout: ShortcutRecorderButton] = [:]
 
-    init(config: ConfigStore = .shared, onRecordingChanged: @escaping (Bool) -> Void) {
+    init(config: ConfigStore = .shared,
+         onRecordingChanged: @escaping (Bool) -> Void,
+         onPreferencesChanged: @escaping () -> Void = {}) {
         self.config = config
         self.onRecordingChanged = onRecordingChanged
+        self.onPreferencesChanged = onPreferencesChanged
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 460, height: 560),
             styleMask: [.titled, .closable, .miniaturizable],
@@ -218,6 +222,7 @@ final class SettingsWindowController: NSWindowController {
         let chord = Chord.allCases[index]
         if chord == config.resizeChord { config.resizeChord = config.moveChord }
         config.moveChord = chord
+        onPreferencesChanged()
         reload()
     }
 
@@ -227,6 +232,7 @@ final class SettingsWindowController: NSWindowController {
         let chord = Chord.allCases[index]
         if chord == config.moveChord { config.moveChord = config.resizeChord }
         config.resizeChord = chord
+        onPreferencesChanged()
         reload()
     }
 
@@ -241,7 +247,7 @@ final class SettingsWindowController: NSWindowController {
         reload()
     }
 
-    @objc private func toggleEdge() { config.edgeSnapping = edgeCheck.state == .on }
+    @objc private func toggleEdge() { config.edgeSnapping = edgeCheck.state == .on; onPreferencesChanged() }
     @objc private func toggleSmart() { config.smartResize = smartCheck.state == .on }
     @objc private func toggleFocus() { config.focusWindow = focusCheck.state == .on }
     @objc private func toggleNearby() { config.snapToNearbyWindows = nearbyCheck.state == .on }

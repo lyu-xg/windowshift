@@ -11,7 +11,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private let menu = NSMenu()
     private var settingsWindow: SettingsWindowController?
     var enableLoginFromImport = false
+    private struct StatusIconState: Equatable {
+        let symbolName: String
+        let disabled: Bool
+        let tooltip: String
+    }
+
     private var permissionCheck: Timer?
+    private var lastIconState: StatusIconState?
     private var missingShortcuts: [String] = []
     private var paused = false
     private var recordingShortcut = false
@@ -31,6 +38,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             name: NSWorkspace.didActivateApplicationNotification,
             object: nil
         )
+        NSWorkspace.shared.notificationCenter.addObserver(
+            self,
+            selector: #selector(workspaceDidWake),
+            name: NSWorkspace.didWakeNotification,
+            object: nil
+        )
         DistributedNotificationCenter.default().addObserver(
             self,
             selector: #selector(keyboardLayoutChanged),
@@ -44,9 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             catch { NSLog("Unable to register WindowShift at login: %@", error.localizedDescription) }
         }
         refreshPermissions()
-        permissionCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            self?.refreshPermissions()
-        }
     }
 
     private var shortcutsShouldRun: Bool {
@@ -91,6 +101,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         settingsWindow?.reload()
     }
 
+    @objc private func workspaceDidWake() {
+        refreshPermissions()
+    }
+
+    private func updatePermissionTimer() {
+        let needsPolling = !paused && (!AXIsProcessTrusted() || !controller.isRunning)
+        if needsPolling {
+            if permissionCheck == nil {
+                permissionCheck = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+                    self?.refreshPermissions()
+                }
+            }
+        } else {
+            permissionCheck?.invalidate()
+            permissionCheck = nil
+        }
+    }
+
     private func refreshPermissions() {
         if AXIsProcessTrusted() && !paused {
             if !controller.isRunning, controller.start() {
@@ -100,6 +128,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             shortcuts.stop()
             controller.stop()
         }
+        updatePermissionTimer()
         updateStatusIcon()
     }
 
@@ -134,6 +163,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             tip = "WindowShift"
         }
 
+        let next = StatusIconState(symbolName: symbolName, disabled: disabled, tooltip: tip)
+        guard next != lastIconState else { return }
+        lastIconState = next
+
         let image = NSImage(systemSymbolName: symbolName, accessibilityDescription: "WindowShift")
             ?? NSImage(systemSymbolName: "macwindow", accessibilityDescription: "WindowShift")
         image?.isTemplate = true
@@ -143,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        refreshPermissions()
         menuWindow = Windows.focused()
         menu.removeAllItems()
         if !AXIsProcessTrusted() {
@@ -257,10 +291,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func openSettings() {
         if settingsWindow == nil {
-            settingsWindow = SettingsWindowController(config: config) { [weak self] recording in
-                self?.recordingShortcut = recording
-                self?.syncShortcuts()
-            }
+            settingsWindow = SettingsWindowController(
+                config: config,
+                onRecordingChanged: { [weak self] recording in
+                    self?.recordingShortcut = recording
+                    self?.syncShortcuts()
+                },
+                onPreferencesChanged: { [weak self] in
+                    self?.controller.refreshCachedPreferences()
+                }
+            )
         }
         settingsWindow?.show()
     }
