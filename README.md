@@ -2,6 +2,16 @@
 
 WindowShift combines modifier-held mouse movement and resizing with keyboard layouts and screen-edge snapping in one lightweight macOS menu-bar app. It runs on macOS 13 (Ventura) or later, has zero external dependencies, and builds with the Xcode Command Line Tools.
 
+## Install
+
+### Homebrew (signed & notarized universal build)
+
+```sh
+brew install --cask lyu-xg/tap/windowshift
+```
+
+Or download `WindowShift-v*-universal.zip` directly from [GitHub Releases](https://github.com/lyu-xg/windowshift/releases) and drag `WindowShift.app` into `/Applications`.
+
 ## Build and test
 
 ```sh
